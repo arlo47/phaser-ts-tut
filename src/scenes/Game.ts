@@ -1,26 +1,49 @@
 import Phaser from 'phaser'
 import { debugDraw } from '../utils/debug'
+import { createLizardAnims } from '~/anims/enemyAnims'
+import { createCharacterAnims } from '~/anims/characterAnims'
+import Lizard from '~/actors/enemies/Lizard'
+import '../actors/characters/Faune'
+import Faune from '../actors/characters/Faune'
 
 export default class Game extends Phaser.Scene {
-
 	// the !: operator tells TS to relax, it's null now but it will exist
 	private cursors!: Phaser.Types.Input.Keyboard.CursorKeys
-	private faune!: Phaser.Physics.Arcade.Sprite
+	private faune!: Faune
+	private lizard!: Phaser.Physics.Arcade.Sprite
 
 	constructor() {
 		super('game')
 	}
 
 	preload() {
-		this.cursors = this.input.keyboard.createCursorKeys()
+		// Assign WASD to default input keys
+		this.cursors = this.input.keyboard.addKeys({
+			up: Phaser.Input.Keyboard.KeyCodes.W,
+			down: Phaser.Input.Keyboard.KeyCodes.S,
+			left: Phaser.Input.Keyboard.KeyCodes.A,
+			right: Phaser.Input.Keyboard.KeyCodes.D
+		});
     }
 
     create() {
+		createCharacterAnims(this.anims)
+		createLizardAnims(this.anims)
+
 		const map = this.make.tilemap({ key: 'dungeon' })
 		const tileset = map.addTilesetImage('dungeon', 'tiles')
 
 		map.createLayer('Ground', tileset)
 		const wallsLayer = map.createLayer('Walls', tileset)
+
+		/**
+		 * add player after creating ground layer, or player
+		 * will be underneath the ground
+		 * 
+		 * this.add[key] can be used due to the GameObjectsFactory
+		 * registration in Faune.ts
+		 */
+		this.faune = this.add.faune(128, 128, 'faune')
 
 		// The collides: true property refers to the property
 		// set in the tiled map editor, also called collides
@@ -28,59 +51,50 @@ export default class Game extends Phaser.Scene {
 
 		debugDraw(wallsLayer, this)
 
-		this.faune = this.physics.add.sprite(128, 128, 'faune', 'run-down/run-down-1.png')
-
-		this.anims.create({
-			key: 'faune-idle-down',
-			frames: [{ key: 'faune', frame: 'walk-down/walk-down-1.png' }]
+		const lizards = this.physics.add.group({
+			classType: Lizard,
+			createCallback: (go) => {
+				const lizGo = go as Lizard
+				lizGo.body.onCollide = true
+			}
 		})
 
-		this.anims.create({
-			key: 'faune-idle-up',
-			frames: [{ key: 'faune', frame: 'walk-up/walk-up-1.png' }]
-		})
-
-		this.anims.create({
-			key: 'faune-idle-side',
-			frames: [{ key: 'faune', frame: 'walk-side/walk-side-1.png' }]
-		})
-    
-		this.anims.create({
-			key: 'faune-run-down',
-			frames: this.anims.generateFrameNames(
-				'faune', 
-				{ start: 1, end: 8, prefix: 'run-down/run-down-', suffix: '.png' }
-			),
-			repeat: -1,
-			frameRate: 15
-		})
-
-		this.anims.create({
-			key: 'faune-run-side',
-			frames: this.anims.generateFrameNames(
-				'faune', 
-				{ start: 1, end: 8, prefix: 'run-side/run-side-', suffix: '.png' }
-			),
-			repeat: -1,
-			frameRate: 15
-		})
-
-		this.anims.create({
-			key: 'faune-run-up',
-			frames: this.anims.generateFrameNames(
-				'faune', 
-				{ start: 1, end: 8, prefix: 'run-up/run-up-', suffix: '.png' }
-			),
-			repeat: -1,
-			frameRate: 15
-		})
-
-		this.faune.anims.play('faune-idle-side')
-		this.faune.body.setSize(this.faune.width * 0.5, this.faune.height * 0.8)
+		lizards.get(256, 128, 'lizard')
 
 		this.physics.add.collider(this.faune, wallsLayer)
+		this.physics.add.collider(lizards, wallsLayer)
+
+		// physics.add.collider can take a cb function
+		// to handle collide events
+		this.physics.add.collider(
+			lizards, 
+			this.faune, 
+			this.handlePlayerLizardCollision, 
+			undefined,
+			this
+		)
 
 		this.cameras.main.startFollow(this.faune, true)
+	}
+
+	// collider cb takes 2 parameters
+	// Each GameObject involved in the collision.
+	// We have access to Faune at the class level
+	// so obj1 is not used
+	private handlePlayerLizardCollision(
+		obj1: Phaser.GameObjects.GameObject, 
+		obj2: Phaser.GameObjects.GameObject
+	) {
+		// remember to cast so we have better intellisense
+		const lizard = obj2 as Lizard;
+		// direction vector of player to lizard
+		const dx = this.faune.x - lizard.x
+		const dy = this.faune.y - lizard.y
+
+		// get the direction in which the lizard hit the player
+		const dir = new Phaser.Math.Vector2(dx, dy).normalize().scale(200)
+
+		this.faune.handleDamage(dir)
 	}
 
 	/**
@@ -88,40 +102,8 @@ export default class Game extends Phaser.Scene {
 	 * @param dt 	-> delta time (change in time since last frame)
 	 */
 	update(t: number, dt: number) {
-		if (!this.cursors || !this.faune) {
-			return
-		}
-
-		const speed = 100;
-
-		if (this.cursors.left.isDown) {
-			this.faune.anims.play('faune-run-side', true)
-			this.faune.setVelocity(-speed, 0)
-			// flip character left, as we only have an image of her running right
-			this.faune.scaleX = -1 
-			// hitbox moves when we flip the texture, 
-			// simple way to fix this is to offset it on flip
-			this.faune.body.offset.x = 24
-		} else if (this.cursors.right.isDown) {
-			this.faune.anims.play('faune-run-side', true)
-			this.faune.setVelocity(speed, 0)
-			// flip character back right
-			this.faune.scaleX = 1 
-			// hitbox moves when moving left, set hitbox offset 
-			// back to 0 when moving right
-			this.faune.body.offset.x = 8
-		} else if (this.cursors.up.isDown) {
-			this.faune.anims.play('faune-run-up', true)
-			this.faune.setVelocity(0, -speed)
-		} else if (this.cursors.down.isDown) {
-			this.faune.anims.play('faune-run-down', true)
-			this.faune.setVelocity(0, speed)
-		} else {
-			// get keys of current animation
-			const parts = this.faune.anims.currentAnim.key.split('-')
-			// split & use the direction part of the key (up, down, side)
-			this.faune.play(`faune-idle-${parts[2]}`)
-			this.faune.setVelocity(0, 0)
+		if (this.faune) {
+			this.faune.update(this.cursors)
 		}
 	}
 }
