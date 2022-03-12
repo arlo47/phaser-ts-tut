@@ -5,6 +5,7 @@ import { createCharacterAnims } from '~/anims/characterAnims'
 import Lizard from '~/actors/enemies/Lizard'
 import '../actors/characters/Faune'
 import Faune from '../actors/characters/Faune'
+import { sceneEvents } from '../events/eventsCenter'
 
 export default class Game extends Phaser.Scene {
 	// the !: operator tells TS to relax, it's null now but it will exist
@@ -27,6 +28,7 @@ export default class Game extends Phaser.Scene {
     }
 
     create() {
+		this.scene.run('game-ui')
 		createCharacterAnims(this.anims)
 		createLizardAnims(this.anims)
 
@@ -95,6 +97,8 @@ export default class Game extends Phaser.Scene {
 		const dir = new Phaser.Math.Vector2(dx, dy).normalize().scale(200)
 
 		this.faune.handleDamage(dir)
+		// emit player-health-changed event on player/lizard collision
+		sceneEvents.emit('player-health-changed', this.faune.health)
 	}
 
 	/**

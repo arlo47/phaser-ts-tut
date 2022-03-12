@@ -19,12 +19,14 @@ declare global {
 
 enum HealthState {
     IDLE,
-    DAMAGE
+    DAMAGE,
+    DEAD
 }
 
 export default class Faune extends Phaser.Physics.Arcade.Sprite {
     private healthState = HealthState.IDLE
     private damageTime = 0
+    private _health = 3
 
     constructor(
         scene: Phaser.Scene, 
@@ -37,19 +39,38 @@ export default class Faune extends Phaser.Physics.Arcade.Sprite {
         this.anims.play('faune-idle-down')
     }
 
+    get health() {
+        return this._health
+    }
+
     handleDamage(dir: Phaser.Math.Vector2) {
+        if (this._health <= 0) {
+            return
+        }
+
         if (this.healthState === HealthState.DAMAGE) {
             return
         }
 
-        // move the player away from the incoming damage
-		this.setVelocity(dir.x, dir.y)
-        this.setTint(0xff0000)
-        this.healthState = HealthState.DAMAGE
-        this.damageTime = 0
+        --this._health
+
+        if (this._health <= 0) {
+            // TODO die
+            this.healthState = HealthState.DEAD
+            this.play('faune-faint')
+            this.setVelocity(0, 0)
+        } else {
+            // move the player away from the incoming damage
+            this.setVelocity(dir.x, dir.y)
+            this.setTint(0xff0000)
+            this.healthState = HealthState.DAMAGE
+            this.damageTime = 0
+        }
     }
 
     preUpdate(t: number, dt: number) {
+        super.preUpdate(t, dt)
+
         switch (this.healthState) {
             case HealthState.IDLE:
                 break
@@ -64,7 +85,10 @@ export default class Faune extends Phaser.Physics.Arcade.Sprite {
     }
 
     update(cursors: Phaser.Types.Input.Keyboard.CursorKeys) {
-        if (this.healthState === HealthState.DAMAGE) {
+        if (
+            this.healthState === HealthState.DAMAGE 
+            || this.healthState === HealthState.DEAD
+        ) {
             return
         }
 
@@ -101,7 +125,7 @@ export default class Faune extends Phaser.Physics.Arcade.Sprite {
 			// get keys of current animation
 			const parts = this.anims.currentAnim.key.split('-')
 			// split & use the direction part of the key (up, down, side)
-			this.play(`faune-idle-${parts[2]}`)
+			this.anims.play(`faune-idle-${parts[2]}`)
 			this.setVelocity(0, 0)
 		}
     }
