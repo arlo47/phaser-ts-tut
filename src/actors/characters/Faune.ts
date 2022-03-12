@@ -55,8 +55,9 @@ export default class Faune extends Phaser.Physics.Arcade.Sprite {
         --this._health
 
         if (this._health <= 0) {
-            // TODO die
+            // set healthState to DEAD
             this.healthState = HealthState.DEAD
+            // animate faint
             this.play('faune-faint')
             this.setVelocity(0, 0)
         } else {

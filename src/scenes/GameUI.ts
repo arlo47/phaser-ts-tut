@@ -8,10 +8,11 @@ export default class GameUI extends Phaser.Scene {
     }
 
     create() {
+        // create a group of heart images
         this.hearts = this.add.group({
             classType: Phaser.GameObjects.Image
         })
-
+        // create multiple hearts in the group
         this.hearts.createMultiple({
             key: 'ui-heart-full',
             setXY: {
@@ -40,6 +41,14 @@ export default class GameUI extends Phaser.Scene {
         })
     }
 
+    /**
+     * @description pass in health as a number (private field on faune)
+     * use the hearts game object image group stored in this
+     * loop through each heart, in .each we have access to the game object 
+     * (specific heart in group) & index. Using the index we can identify
+     * which heart we are currently interating on.
+     * @param {number} health
+     */
     private handlePlayerHealthChanged(health: number) {
         this.hearts.children.each((go, i) => {
             const heart = go as Phaser.GameObjects.Image
