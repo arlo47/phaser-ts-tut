@@ -1,42 +1,66 @@
-import Phaser from 'phaser'
+import Phaser, { Physics } from 'phaser'
+
 import { debugDraw } from '../utils/debug'
+
 import { createLizardAnims } from '~/anims/enemyAnims'
 import { createCharacterAnims } from '~/anims/characterAnims'
+import { createChestAnims } from '../anims/treasureAnims'
+
 import Lizard from '~/actors/enemies/Lizard'
 import '../actors/characters/Faune'
 import Faune from '../actors/characters/Faune'
+
 import { sceneEvents } from '../events/eventsCenter'
+import { setPlayerControls } from '../utils/playerControls' 
+import Chest from '~/items/Chest'
 
 export default class Game extends Phaser.Scene {
 	// the !: operator tells TS to relax, it's null now but it will exist
 	private cursors!: Phaser.Types.Input.Keyboard.CursorKeys
 	private faune!: Faune
-	private lizard!: Phaser.Physics.Arcade.Sprite
+	private knives!: Phaser.Physics.Arcade.Group
+	private lizards!: Phaser.Physics.Arcade.Group
+
+	private playerLizardCollider?: Phaser.Physics.Arcade.Collider
 
 	constructor() {
 		super('game')
 	}
 
 	preload() {
-		// Assign WASD to default input keys
-		this.cursors = this.input.keyboard.addKeys({
-			up: Phaser.Input.Keyboard.KeyCodes.W,
-			down: Phaser.Input.Keyboard.KeyCodes.S,
-			left: Phaser.Input.Keyboard.KeyCodes.A,
-			right: Phaser.Input.Keyboard.KeyCodes.D
-		});
+		this.cursors = setPlayerControls(this.input)
     }
 
     create() {
 		this.scene.run('game-ui')
+
 		createCharacterAnims(this.anims)
 		createLizardAnims(this.anims)
+		createChestAnims(this.anims)
 
 		const map = this.make.tilemap({ key: 'dungeon' })
 		const tileset = map.addTilesetImage('dungeon', 'tiles')
 
 		map.createLayer('Ground', tileset)
 		const wallsLayer = map.createLayer('Walls', tileset)
+
+		// add chests to object layer, keys & coordinates
+		// are set in Tiled
+		const chests = this.physics.add.staticGroup({
+			classType: Chest
+		})
+		const chestsLayer = map.getObjectLayer('Chests')
+		chestsLayer.objects.forEach(chestObj => {
+			chests.get(
+				chestObj.x! + chestObj.width! * 0.5!, 
+				chestObj.y! - chestObj.height!, 
+				'treasure'
+			)
+		})
+
+		this.knives = this.physics.add.group({
+			classType: Phaser.Physics.Arcade.Image
+		})
 
 		/**
 		 * add player after creating ground layer, or player
@@ -46,14 +70,15 @@ export default class Game extends Phaser.Scene {
 		 * registration in Faune.ts
 		 */
 		this.faune = this.add.faune(128, 128, 'faune')
+		this.faune.setKnives(this.knives)
 
 		// The collides: true property refers to the property
 		// set in the tiled map editor, also called collides
 		wallsLayer.setCollisionByProperty({ collides: true })
 
-		debugDraw(wallsLayer, this)
+		// debugDraw(wallsLayer, this)
 
-		const lizards = this.physics.add.group({
+		this.lizards = this.physics.add.group({
 			classType: Lizard,
 			createCallback: (go) => {
 				const lizGo = go as Lizard
@@ -61,15 +86,45 @@ export default class Game extends Phaser.Scene {
 			}
 		})
 
-		lizards.get(256, 128, 'lizard')
+		this.lizards.get(256, 128, 'lizard')
 
 		this.physics.add.collider(this.faune, wallsLayer)
-		this.physics.add.collider(lizards, wallsLayer)
+		this.physics.add.collider(this.lizards, wallsLayer)
 
-		// physics.add.collider can take a cb function
-		// to handle collide events
 		this.physics.add.collider(
-			lizards, 
+			this.knives, 
+			wallsLayer,
+			this.handleKnifeWallCollision,
+			undefined,
+			this
+		)
+
+		this.physics.add.collider(
+			this.knives, 
+			this.lizards, 
+			this.handleKnifeLizardCollision,
+			undefined,
+			this
+		)
+
+		this.physics.add.collider(
+			this.faune,
+			chests,
+			this.handlePlayerChestCollision,
+			undefined, 
+			this
+		)
+
+		/**
+		 * physics.add.collider can take a cb function
+		 * to handle collide events.
+		 * 
+		 * NOTE this collider must be destroyed on
+		 * player death, so the lizard will still be able
+		 * to push the player after she has fainted
+		 */
+		this.playerLizardCollider = this.physics.add.collider(
+			this.lizards, 
 			this.faune, 
 			this.handlePlayerLizardCollision, 
 			undefined,
@@ -77,6 +132,30 @@ export default class Game extends Phaser.Scene {
 		)
 
 		this.cameras.main.startFollow(this.faune, true)
+	}
+
+	private handlePlayerChestCollision(
+		obj1: Phaser.GameObjects.GameObject, 
+		obj2: Phaser.GameObjects.GameObject
+	) {
+		const chest = obj2 as Chest
+		this.faune.setChest(chest)
+
+	}
+
+	private handleKnifeWallCollision(
+		obj1: Phaser.GameObjects.GameObject, 
+		obj2: Phaser.GameObjects.GameObject
+	) {
+		this.knives.killAndHide(obj1)
+	}
+
+	private handleKnifeLizardCollision(
+		obj1: Phaser.GameObjects.GameObject, 
+		obj2: Phaser.GameObjects.GameObject
+	) {
+		this.knives.killAndHide(obj1)
+		this.lizards.killAndHide(obj2)
 	}
 
 	// collider cb takes 2 parameters
@@ -99,6 +178,13 @@ export default class Game extends Phaser.Scene {
 		this.faune.handleDamage(dir)
 		// emit player-health-changed event on player/lizard collision
 		sceneEvents.emit('player-health-changed', this.faune.health)
+
+		// check if player is dead, if so, destroy collider
+		if (this.faune.health <= 0) {
+			// collider is returned when created & stored as 
+			// a class variable
+			this.playerLizardCollider?.destroy()
+		}
 	}
 
 	/**

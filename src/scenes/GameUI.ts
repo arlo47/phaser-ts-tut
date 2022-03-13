@@ -8,6 +8,12 @@ export default class GameUI extends Phaser.Scene {
     }
 
     create() {
+        const coinsLabel = this.add.text(5, 20, '0')
+
+        sceneEvents.on('player-coins-changed', (coins :number)  => {
+            coinsLabel.text = coins.toString()
+        })
+
         // create a group of heart images
         this.hearts = this.add.group({
             classType: Phaser.GameObjects.Image
@@ -32,12 +38,14 @@ export default class GameUI extends Phaser.Scene {
 
         // remember to unbind the event on scene shutdown to
         // avoid memory leaks
-        this.events.on(Phaser.Scenes.Events.SHUTDOWN, () => {
+        this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => {
             sceneEvents.off(
                 'player-health-changed', 
                 this.handlePlayerHealthChanged,
                 this
             )
+
+            sceneEvents.off('player-coins.changed')
         })
     }
 
